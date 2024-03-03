@@ -348,6 +348,7 @@ fn get_handler_func(opcode: u8) -> Option<HandlerFunc> {
     };
 }
 
+// TODO: Move to be implemented on state??
 fn client_message_handler(state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
     return Ok(true); // Returns true because the event probably means we need to close the wm
 }
@@ -404,6 +405,7 @@ fn run(dpy: &RustConnection, mut state: State) -> Result<(), Box<dyn Error>> {
 
         while let Some(handler) = handler_opt {
             let mut should_ignore = false;
+            // Borrowed from https://github.com/psychon/x11rb/blob/master/x11rb/examples/simple_window_manager.rs#L253
             if let Some(seqno) = event.wire_sequence_number() {
                 while let Some(&Reverse(to_ignore)) = state.sequences_to_ignore.peek() {
                     if to_ignore.wrapping_sub(seqno) <= u16::max_value() / 2 {
@@ -448,6 +450,7 @@ fn setup<'a>(dpy: &'a RustConnection, screen: &Screen) -> Result<State<'a>, Box<
     let res = dpy.change_window_attributes(screen.root, &change)?.check();
     if let Err(ReplyError::X11Error(ref error)) = res {
         if error.error_kind == ErrorKind::Access {
+            eprintln!("Unable to set attributes on the root window, are you running another window manager?");
             std::process::exit(1);
         }
 
