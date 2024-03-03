@@ -348,43 +348,43 @@ fn get_handler_func(opcode: u8) -> Option<HandlerFunc> {
     };
 }
 
-fn client_message_handler(state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
+fn client_message_handler(_state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
     return Ok(true); // Returns true because the event probably means we need to close the wm
 }
 
-fn motion_notify_handler(state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
+fn motion_notify_handler(_state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
     return Ok(false); // Unimplemented
 }
 
-fn enter_notify_handler(state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
+fn enter_notify_handler(_state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
     return Ok(false); // Unimplemented
 }
 
-fn destroy_notify_handler(state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
+fn destroy_notify_handler(_state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
     return Ok(false); // Unimplemented
 }
 
-fn key_press_handler(state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
+fn key_press_handler(_state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
     return Ok(false); // Unimplemented
 }
 
-fn button_press_handler(state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
+fn button_press_handler(_state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
     return Ok(false); // Unimplemented
 }
 
-fn button_release_handler(state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
+fn button_release_handler(_state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
     return Ok(false); // Unimplemented
 }
 
-fn map_request_handler(state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
+fn map_request_handler(_state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
     return Ok(false); // Unimplemented
 }
 
-fn focus_in_handler(state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
+fn focus_in_handler(_state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
     return Ok(false); // Unimplemented
 }
 
-fn focus_out_handler(state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
+fn focus_out_handler(_state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
     return Ok(false); // Unimplemented
 }
 
