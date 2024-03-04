@@ -1,4 +1,4 @@
-use std::{cmp::Reverse, collections::BinaryHeap, error::Error, ptr::null_mut};
+use std::{cmp::Reverse, collections::BinaryHeap, error::Error};
 
 use x11rb::{
     connection::Connection,
@@ -21,10 +21,6 @@ use x11rb::{
     COPY_DEPTH_FROM_PARENT,
 };
 
-trait LinkableListable {
-    fn add_next(self, element: Self);
-}
-
 const NUMTAGS: usize = 9;
 
 struct Client {
@@ -37,8 +33,7 @@ struct Client {
     tags: u32,  // bitfield containing all of the tags to display on
     window_id: u32,
     frame_window_id: u32,
-    next: *mut Client,
-    monitor: *const Monitor,
+    monitor: usize,
 }
 
 impl Client {
@@ -47,7 +42,7 @@ impl Client {
         win: Window,
         frame_win: Window,
         geometry: &GetGeometryReply,
-        monitor: *mut Monitor,
+        monitor: usize,
     ) -> Result<Client, ReplyOrIdError> {
         let wm_name_reply = dpy
             .get_property(false, win, AtomEnum::WM_NAME, AtomEnum::STRING, 0, 0)?
@@ -65,23 +60,8 @@ impl Client {
             tags: 0,
             window_id: win,
             frame_window_id: frame_win,
-            next: null_mut(),
             monitor,
         });
-    }
-}
-
-impl LinkableListable for *mut Client {
-    fn add_next(self, element: *mut Client) {
-        unsafe {
-            let mut next_elem: *mut Client = self as *mut Client;
-
-            while !(*next_elem).next.is_null() {
-                next_elem = (*next_elem).next;
-            }
-
-            (*next_elem).next = element;
-        }
     }
 }
 
@@ -94,15 +74,14 @@ struct TagInfo {
 
 struct Layout<'a> {
     symbol: &'a str,
-    arrange: fn(*mut Monitor),
+    arrange: fn(&Monitor),
 }
 
 struct Monitor {
-    clients: *mut Client, // Linked list of clients for each monitor
-    selected_client: *mut Client,
+    clients: Vec<Client>,   // All of the client windows within the monitor
+    selected_client: usize, // Index of selected client
     selected_tags: u16,
     tag_info: [TagInfo; NUMTAGS],
-    next: *mut Monitor,
     num: usize,
     mx: i16, // Screen geometries
     my: i16,
@@ -118,15 +97,14 @@ struct Monitor {
 impl Monitor {
     fn new(crtc_info: GetCrtcInfoReply, num: usize) -> Monitor {
         Monitor {
-            clients: null_mut(),
-            selected_client: null_mut(),
+            clients: Vec::new(),
+            selected_client: 0,
             selected_tags: 0,
             tag_info: [TagInfo {
                 num_masters: 0,
                 mfact: 0.0,
                 layout: 0,
             }; NUMTAGS],
-            next: null_mut(),
             num,
             mx: crtc_info.x,
             my: crtc_info.y,
@@ -146,8 +124,8 @@ struct State<'a> {
     screen: &'a Screen,
     root: u32,
     black_gc: Gcontext,
-    monitors: *mut Monitor, // Linked list of monitors
-    selected_monitor: *mut Monitor,
+    monitors: Vec<Monitor>,  // All of the monitors connected to the machine
+    selected_monitor: usize, // Index of selected monitor
     protocols: Atom,
     delete_window: Atom,
     sequences_to_ignore: BinaryHeap<Reverse<u16>>,
@@ -176,32 +154,26 @@ impl<'a> State<'a> {
             screen,
             root: screen.root,
             black_gc,
-            monitors: null_mut(),
-            selected_monitor: null_mut(),
+            monitors: Vec::new(),
+            selected_monitor: 0,
             protocols: protocols.reply()?.atom,
             delete_window: delete_window.reply()?.atom,
             sequences_to_ignore: Default::default(),
         };
 
-        state.monitors = state.query_monitors()?;
-        state.selected_monitor = state.monitors; // This is just the pointer to the first monitor
+        state.query_monitors()?;
         state.query_clients()?;
-        unsafe {
-            (*state.monitors).selected_client = (*state.monitors).clients;
-        }
 
         return Ok(state);
     }
 
-    fn query_monitors(&mut self) -> Result<*mut Monitor, ReplyError> {
+    fn query_monitors(&mut self) -> Result<(), ReplyError> {
         let reply = self
             .dpy
             .randr_get_screen_resources_current(self.root)?
             .reply()?;
         let len: usize = reply.length as usize;
         let outputs = reply.outputs;
-
-        let mut ret: *mut Monitor = null_mut();
 
         // This should never be zero. Might segfault tho lol
         for i in 0..len {
@@ -220,33 +192,22 @@ impl<'a> State<'a> {
                 .reply()?;
 
             // This will probably segfault
-            let next = &mut Monitor::new(crtc_info, i) as *mut _;
-            if !ret.is_null() {
-                unsafe {
-                    (*ret).next = next;
-                }
-            }
-            ret = next;
+            self.monitors.push(Monitor::new(crtc_info, i));
         }
 
-        return Ok(ret);
+        return Ok(());
     }
 
     fn find_client_by_window_id(&self, win: Window) -> Option<&Client> {
-        unsafe {
-            let monitor = self.monitors;
-            while !monitor.is_null() {
-                let client = (*monitor).clients;
-
-                while !client.is_null() {
-                    if (*client).window_id == win || (*client).frame_window_id == win {
-                        return Some(&(*client));
-                    }
+        for monitor in &self.monitors {
+            for client in &monitor.clients {
+                if client.window_id == win || client.frame_window_id == win {
+                    return Some(&client);
                 }
             }
-
-            return None;
         }
+
+        return None;
     }
 
     fn query_clients(&mut self) -> Result<(), ReplyOrIdError> {
@@ -312,17 +273,15 @@ impl<'a> State<'a> {
         self.sequences_to_ignore
             .push(Reverse(cookie.sequence_number() as u16));
 
-        unsafe {
-            let clients = (*self.selected_monitor).clients;
-            let new_client =
-                &mut Client::new(self.dpy, win, frame_win, geometry, self.selected_monitor)?
-                    as *mut _;
-            if clients.is_null() {
-                (*self.selected_monitor).clients = new_client;
-            } else {
-                clients.add_next(new_client);
-            }
-        }
+        self.monitors[self.selected_monitor]
+            .clients
+            .push(Client::new(
+                self.dpy,
+                win,
+                frame_win,
+                geometry,
+                self.selected_monitor,
+            )?);
 
         return Ok(());
     }
@@ -391,7 +350,7 @@ fn focus_out_handler(state: &mut State, _: Event) -> Result<bool, Box<dyn Error>
 
 fn screen_change_handler(state: &mut State, _: Event) -> Result<bool, Box<dyn Error>> {
     // Need to handle connection, disconnection, their clients, etc...
-    state.monitors = state.query_monitors()?;
+    state.query_monitors()?;
 
     return Ok(false); // Unimplemented
 }
@@ -454,16 +413,24 @@ fn setup<'a>(dpy: &'a RustConnection, screen: &Screen) -> Result<State<'a>, Box<
             std::process::exit(1);
         }
 
-        return Err(error.error_code.to_string().into());
+        res?;
     }
 
     return Ok(State::new(dpy, screen.root as usize)?);
 }
 
+fn print_if_err<T>(arg: Result<T, Box<dyn Error>>) -> Result<T, Box<dyn Error>> {
+    if let Err(e) = &arg {
+        eprintln!("{:#?}", e);
+    }
+
+    return arg;
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
-    let (dpy, screen_num) = x11rb::connect(None).unwrap();
+    let (dpy, screen_num) = x11rb::connect(None)?;
     let screen = &dpy.setup().roots[screen_num];
 
-    let state = setup(&dpy, screen)?;
-    return run(&dpy, state);
+    let state = print_if_err(setup(&dpy, screen))?;
+    return print_if_err(run(&dpy, state));
 }
